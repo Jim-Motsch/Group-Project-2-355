@@ -1,8 +1,16 @@
 package medvault.app;
 
+import medvault.security.CryptoService;
+import medvault.security.KeyProvider;
+import medvault.security.TokenGenerator;
+
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Objects;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 
 /**
  * The in-class demo: one story in which an attacker tries to break into
@@ -74,10 +82,51 @@ public final class DemoScenario {
         });
         // Jimmy: CWE-327, 321, 338, 117, 532, 209
         add("Show notes are AES-GCM ciphertext in the database (CWE-327)", () -> {
-            throw new UnsupportedOperationException("TODO(Jimmy)");
+            // Same key the app loaded at startup (MEDVAULT_RECORD_KEY, CWE-321).
+            CryptoService crypto = new CryptoService(new KeyProvider().loadRecordKey(), new TokenGenerator());
+            String note = "Pt reports chest pain; ECG ordered.";
+            String first = crypto.encrypt(note);
+            String second = crypto.encrypt(note);
+            byte[] forged = Base64.getDecoder().decode(first);
+            forged[forged.length - 20] ^= 0x01; // attacker flips one bit of the stored ciphertext
+            String tamper;
+            try {
+                crypto.decrypt(Base64.getEncoder().encodeToString(forged));
+                tamper = "tampered note was ACCEPTED";
+            } catch (SecurityException rejected) {
+                tamper = "tampered note rejected";
+            }
+            return "stored as " + first.substring(0, 24) + "... ; same note again -> "
+                    + (first.equals(second) ? "SAME ciphertext" : "different ciphertext")
+                    + " ; decrypts back " + (note.equals(crypto.decrypt(first)) ? "correctly" : "WRONG")
+                    + " ; " + tamper;
         });
         add("Username with a newline can't forge a log line (CWE-117)", () -> {
-            throw new UnsupportedOperationException("TODO(Jimmy)");
+            String attack = "bob\n2026-11-04 INFO actor=admin action=LOGIN_OK";
+            List<String> written = new ArrayList<>();
+            Handler capture = new Handler() {
+                @Override
+                public void publish(LogRecord record) {
+                    written.add(record.getMessage());
+                }
+
+                @Override
+                public void flush() {
+                }
+
+                @Override
+                public void close() {
+                }
+            };
+            Logger auditLog = Logger.getLogger("medvault.audit");
+            auditLog.addHandler(capture);
+            try {
+                app.audit().record(null, "LOGIN_FAILED", "username=" + attack);
+            } finally {
+                auditLog.removeHandler(capture);
+            }
+            String line = written.isEmpty() ? "" : written.get(0);
+            return (line.contains("\n") ? "FORGED a second line: " : "one line written: ") + line;
         });
     }
 
