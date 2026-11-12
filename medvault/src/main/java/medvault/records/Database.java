@@ -10,7 +10,7 @@ import java.util.Objects;
  * Opens connections to the embedded H2 database and creates the schema.
  *
  * <p>Callers must close every {@link Connection}, {@code PreparedStatement}
- * and {@code ResultSet} with try-with-resources (CWE-404).</p>
+ * and {@code ResultSet} with try-with-resources (CWE-772).</p>
  *
  * @author James Strickert
  */
