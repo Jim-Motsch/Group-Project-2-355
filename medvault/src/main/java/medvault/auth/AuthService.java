@@ -32,4 +32,16 @@ public interface AuthService {
 
     /** @param token the session to end */
     void logout(String token);
+
+    /**
+     * Changes a password after re-checking the current one (CWE-620).
+     *
+     * @param username    account to change
+     * @param oldPassword the current password, which must verify
+     * @param newPassword the replacement, checked by {@link PasswordPolicy}
+     * @throws medvault.model.AccessDeniedException if the current password is wrong
+     *         or the account is locked (same message as a failed login)
+     * @throws medvault.model.ValidationException if the new password is too weak
+     */
+    void changePassword(String username, char[] oldPassword, char[] newPassword);
 }

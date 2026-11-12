@@ -70,7 +70,7 @@ public final class CredentialsConfig {
         return databasePassword.clone();
     }
 
-    /** Never prints the passwords (CWE-532). */
+    /** Never prints the passwords, so they can't end up in a log (CWE-779). */
     @Override
     public String toString() {
         return "CredentialsConfig[***]";
