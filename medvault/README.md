@@ -13,7 +13,7 @@ mvn test                  # run all tests
 mvn compile exec:java     # run the demo story
 ```
 
-The app reads its secrets from the environment and refuses to start without them (CWE-798, CWE-321):
+The app reads its secrets from the environment and refuses to start without them (CWE-798):
 
 ```bash
 export MEDVAULT_ADMIN_PASSWORD='...'
@@ -25,11 +25,11 @@ export MEDVAULT_RECORD_KEY="$(openssl rand -base64 32)"
 
 | Package | Owner | Responsibility | CWEs |
 | --- | --- | --- | --- |
-| `medvault.auth` | Ian | Login, passwords, sessions | 307, 521, 613, 759, 798, 916 |
-| `medvault.access` | Martin | Roles, permissions, chart ownership | 269, 283, 306, 639, 842, 1220 |
-| `medvault.records` | James | Patient DB, search, import/export, backup | 78, 79, 89, 502, 611, 643 |
-| `medvault.files` | Alex | Lab-report upload/download and storage | 22, 377, 404, 434, 732, 770 |
-| `medvault.security`, `medvault.audit` | Jimmy | Encryption, randomness, logging, errors | 117, 209, 321, 327, 338, 532 |
+| `medvault.auth` | Ian | Login, passwords, sessions | 307, 521, 613, 620, 798, 916 |
+| `medvault.access` | Martin | Roles, permissions, chart ownership | 266, 283, 306, 639, 842, 1220 |
+| `medvault.records` | James | Patient DB, search, import/export, backup | 78, 79, 89, 502, 611, 1236 |
+| `medvault.files` | Alex | Lab-report upload/download and storage | 22, 276, 378, 434, 770, 772 |
+| `medvault.security`, `medvault.audit` | Jimmy | Encryption, hashing, randomness, logging | 117, 328, 338, 778, 779, 1204 |
 | `medvault.model` | shared | `User`, `Role`, `Patient`, `LabReport`, `Session` | |
 | `medvault.app` | shared | `MedVaultApp` (wiring), `DemoScenario`, `Main` | |
 

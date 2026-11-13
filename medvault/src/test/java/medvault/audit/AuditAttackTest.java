@@ -1,7 +1,18 @@
 package medvault.audit;
 
+import medvault.access.AccessPolicy;
+import medvault.access.InMemoryCareTeam;
+import medvault.access.Permission;
+import medvault.auth.DefaultAuthService;
+import medvault.auth.InMemoryUserRepository;
+import medvault.auth.LoginAttemptTracker;
+import medvault.auth.PasswordHasher;
+import medvault.auth.PasswordPolicy;
+import medvault.auth.SessionManager;
 import medvault.model.AccessDeniedException;
+import medvault.model.Patient;
 import medvault.model.Role;
+import medvault.model.Session;
 import medvault.model.User;
 import medvault.model.ValidationException;
 import medvault.security.TokenGenerator;
@@ -13,6 +24,8 @@ import org.junit.jupiter.api.Test;
 import java.io.FileNotFoundException;
 import java.io.UncheckedIOException;
 import java.sql.SQLException;
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Handler;
@@ -140,9 +153,19 @@ class AuditAttackTest {
         }
     }
 
-    /** CWE-532: Insertion of Sensitive Information into Log File. */
+    /** CWE-779: Logging of Excessive Data. */
     @Nested
-    class Cwe532SensitiveDataInLogs {
+    class Cwe779ExcessiveLogging {
+
+        @Test
+        void aFullRecordIsNeverDumpedIntoTheLog() {
+            // Attack (or careless code): pass a whole chart export as the detail of one event.
+            String wholeChart = "patient=42 " + "lab result row; ".repeat(50_000);
+            audit.record(new User("dr.house", Role.DOCTOR), "CHART_EXPORTED", wholeChart);
+            String line = onlyLine();
+            assertTrue(line.length() < LogSanitizer.MAX_LENGTH + 100, "line is " + line.length() + " chars");
+            assertTrue(line.contains("patient=42"), "the useful id survives: " + line);
+        }
 
         @Test
         void legitimateEventIsLoggedWithUsefulDetail() {
@@ -190,9 +213,71 @@ class AuditAttackTest {
         }
     }
 
-    /** CWE-209: Generation of Error Message Containing Sensitive Information. */
+    /** CWE-778: Insufficient Logging. Every security event writes an audit entry. */
     @Nested
-    class Cwe209ErrorMessageLeaks {
+    class Cwe778InsufficientLogging {
+        private final SessionManager sessions = new SessionManager(new TokenGenerator(), Clock.systemUTC());
+        private final InMemoryUserRepository users = new InMemoryUserRepository();
+        private final DefaultAuthService auth = new DefaultAuthService(users, new PasswordPolicy(),
+                new PasswordHasher(new TokenGenerator()), new LoginAttemptTracker(Clock.systemUTC()), sessions, audit);
+        private final AccessPolicy policy = new AccessPolicy(sessions, new InMemoryCareTeam(), audit);
+        private final char[] password = "correct horse battery staple".toCharArray();
+
+        private long entries(String action) {
+            return lines.stream().filter(l -> l.contains(" action=" + action + " ")).count();
+        }
+
+        @BeforeEach
+        void account() {
+            auth.register("nurse.joy", password, Role.NURSE);
+            lines.clear();
+        }
+
+        @Test
+        void everyFailedLoginWritesAnEntry() {
+            assertThrows(AccessDeniedException.class, () -> auth.login("nurse.joy", "wrong horse battery".toCharArray()));
+            assertThrows(AccessDeniedException.class, () -> auth.login("no.such.user", password));
+            assertThrows(AccessDeniedException.class, () -> auth.login(null, password));
+            assertEquals(3, entries("LOGIN_FAILED"), lines.toString());
+            assertTrue(lines.get(0).contains("user=nurse.joy"), "the entry says which account: " + lines.get(0));
+        }
+
+        @Test
+        void lockoutWritesAnEntry() {
+            for (int i = 0; i < LoginAttemptTracker.MAX_FAILURES; i++) {
+                assertThrows(AccessDeniedException.class, () -> auth.login("nurse.joy", "guess-guess-guess".toCharArray()));
+            }
+            assertEquals(1, entries("ACCOUNT_LOCKED"), "the moment of locking is recorded: " + lines);
+            assertThrows(AccessDeniedException.class, () -> auth.login("nurse.joy", password));
+            assertEquals(1, entries("LOGIN_LOCKED"), "attempts while locked are recorded too: " + lines);
+        }
+
+        @Test
+        void everyAccessDenialWritesAnEntry() {
+            Session nurse = sessions.create(new User("nurse.joy", Role.NURSE));
+            Patient notHers = new Patient(2, "Bob Sample", LocalDate.of(1975, 6, 15), "dr.grey", "");
+            assertThrows(AccessDeniedException.class, () -> policy.require(nurse, Permission.MANAGE_USERS));
+            assertThrows(AccessDeniedException.class, () -> policy.requireCanRead(nurse, notHers));
+            assertThrows(AccessDeniedException.class, () -> policy.requireCanEdit(nurse, notHers));
+            assertEquals(3, entries("ACCESS_DENIED"), lines.toString());
+            Session forged = new Session("forged-token", new User("admin", Role.ADMIN), nurse.getExpiresAt());
+            assertThrows(AccessDeniedException.class, () -> policy.require(forged, Permission.MANAGE_USERS));
+            assertEquals(1, entries("SESSION_REJECTED"), lines.toString());
+            for (String line : lines) {
+                assertFalse(line.contains("Bob"), "entries use ids, never names: " + line);
+            }
+        }
+
+        @Test
+        void legitimateSuccessIsLoggedToo() {
+            auth.login("nurse.joy", password);
+            assertEquals(1, entries("LOGIN_OK"));
+        }
+    }
+
+    /** Internal errors: a generic message for the user, and always an audit entry (CWE-778). */
+    @Nested
+    class ErrorHandling {
         private final ErrorHandler errors = new ErrorHandler(audit, new TokenGenerator());
 
         @Test

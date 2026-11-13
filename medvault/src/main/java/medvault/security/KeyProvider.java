@@ -10,9 +10,10 @@ import java.util.function.Function;
 /**
  * Supplies the AES key used to encrypt patient records at rest.
  *
- * <p><b>CWE-321: Use of Hard-coded Cryptographic Key.</b> A key written in
- * source code is shared by every installation and readable by anyone with the
- * repository or the compiled JAR, so it protects nothing. This class contains
+ * <p>The key is never hard-coded (the same rule CWE-798 applies to
+ * passwords). A key written in source code is shared by every installation
+ * and readable by anyone with the repository or the compiled JAR, so it
+ * protects nothing. This class contains
  * no key and no fallback: it reads the {@code MEDVAULT_RECORD_KEY} environment
  * variable (Base64, exactly 32 bytes) and throws if it is missing or malformed,
  * so the app refuses to start rather than run with a guessable key.</p>

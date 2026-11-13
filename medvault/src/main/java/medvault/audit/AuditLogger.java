@@ -12,16 +12,19 @@ import java.util.regex.Pattern;
  * Records every security-relevant action: logins, lockouts, chart reads,
  * edits, uploads, denials.
  *
- * <p><b>CWE-532: Insertion of Sensitive Information into Log File.</b> Logs
- * are read by more people (and kept longer) than the database, so anything
- * secret written there leaks. Each line holds only the actor's username and
- * role, a fixed action name, and a detail string. The detail is meant for
- * usernames, patient <em>ids</em> and outcomes; as a safety net, before it is
- * written this class redacts the value of any sensitive {@code key=value}
- * field (password, token, session, secret, key, name, dob, notes, ssn) and
- * any long token-shaped string (32+ Base64/hex characters including a digit
- * or symbol, the shape of a session token, salt or key). All free text then passes through
- * {@link LogSanitizer} (CWE-117).</p>
+ * <p><b>CWE-779: Logging of Excessive Data.</b> Logs are read by more people
+ * (and kept longer) than the database, so dumping whole records, request
+ * bodies or secrets into them both leaks data and buries the events that
+ * matter. Each line holds only the actor's username and role, a fixed action
+ * name, and a short detail string meant for usernames, patient <em>ids</em>
+ * and outcomes, never a full chart. As a safety net, before it is written
+ * this class redacts the value of any sensitive {@code key=value} field
+ * (password, token, session, secret, key, name, dob, notes, ssn) and any long
+ * token-shaped string (32+ Base64/hex characters including a digit or symbol,
+ * the shape of a session token, salt or key). The detail then passes through
+ * {@link LogSanitizer} (CWE-117), which also caps it at
+ * {@link LogSanitizer#MAX_LENGTH} characters, so no single event can flood
+ * the log.</p>
  *
  * <p>Line format:
  * {@code actor=<username> role=<ROLE> action=<ACTION> detail="<clean detail>"}</p>

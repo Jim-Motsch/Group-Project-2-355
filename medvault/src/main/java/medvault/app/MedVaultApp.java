@@ -21,6 +21,8 @@ import medvault.files.LabReportStore;
 import medvault.files.SecureTempFiles;
 import medvault.files.UploadLimits;
 import medvault.files.UploadValidator;
+import medvault.model.Role;
+import medvault.model.ValidationException;
 import medvault.records.BackupService;
 import medvault.records.Database;
 import medvault.records.JdbcPatientRepository;
@@ -34,6 +36,7 @@ import medvault.security.TokenGenerator;
 
 import java.nio.file.Path;
 import java.time.Clock;
+import java.util.Arrays;
 
 /**
  * Builds the whole application by constructor injection. This is the only
@@ -43,6 +46,10 @@ import java.time.Clock;
  * @author MedVault team
  */
 public final class MedVaultApp {
+
+    /** Login name of the bootstrap admin, whose password comes from {@code MEDVAULT_ADMIN_PASSWORD}. */
+    public static final String ADMIN_USERNAME = "admin";
+
     private final AuthService auth;
     private final AccessPolicy access;
     private final RoleManager roles;
@@ -75,11 +82,13 @@ public final class MedVaultApp {
     }
 
     /**
-     * Wires every component. Secrets come from the environment
-     * (CWE-798, CWE-321).
+     * Wires every component and creates the bootstrap {@value #ADMIN_USERNAME}
+     * account. Secrets come from the environment (CWE-798).
      *
      * @param storageRoot directory for lab-report files
      * @return a ready application
+     * @throws IllegalStateException if a secret is missing, malformed, or the
+     *         admin password is too weak
      */
     public static MedVaultApp create(Path storageRoot) throws Exception {
         Clock clock = Clock.systemUTC();
@@ -88,7 +97,7 @@ public final class MedVaultApp {
         TokenGenerator random = new TokenGenerator();
         CryptoService crypto = new CryptoService(new KeyProvider().loadRecordKey(), random);
         AuditLogger audit = new AuditLogger(new LogSanitizer());
-        ErrorHandler errors = new ErrorHandler(audit);
+        ErrorHandler errors = new ErrorHandler(audit, random);
 
         // auth (Ian)
         CredentialsConfig creds = CredentialsConfig.fromEnvironment();
@@ -97,23 +106,35 @@ public final class MedVaultApp {
         AuthService auth = new DefaultAuthService(users, new PasswordPolicy(),
                 new PasswordHasher(random), new LoginAttemptTracker(clock), sessions, audit);
 
-        // access (Martin)
+        // Bootstrap admin from the environment (CWE-798); a weak value is refused (CWE-521).
+        char[] adminPassword = creds.adminPassword();
+        try {
+            auth.register(ADMIN_USERNAME, adminPassword, Role.ADMIN);
+        } catch (ValidationException weak) {
+            throw new IllegalStateException(CredentialsConfig.ADMIN_PASSWORD_ENV
+                    + " does not meet the password policy: " + weak.getMessage());
+        } finally {
+            Arrays.fill(adminPassword, '\0');
+        }
+
+        // access (Martin): roles are re-read from the account store on every check (CWE-266)
         CareTeam careTeam = new InMemoryCareTeam();
-        AccessPolicy access = new AccessPolicy(sessions, careTeam, audit);
+        AccessPolicy access = new AccessPolicy(sessions, careTeam, users, audit);
         RoleManager roles = new RoleManager(access, users, audit);
 
         // records (James)
-        Database db = new Database("jdbc:h2:mem:medvault;DB_CLOSE_DELAY=-1", "medvault",
-                creds.databasePassword());
+        char[] dbPassword = creds.databasePassword();
+        Database db = new Database("jdbc:h2:mem:medvault;DB_CLOSE_DELAY=-1", "medvault", dbPassword);
+        Arrays.fill(dbPassword, '\0'); // Database keeps its own copy
         db.createSchema();
         PatientRepository patients = new JdbcPatientRepository(db, crypto, access, audit);
 
         // files (Alex)
         LabReportStore labs = new FileSystemLabReportStore(storageRoot, new UploadValidator(),
-                new UploadLimits(), new SecureTempFiles(), access, audit);
+                new UploadLimits(), new SecureTempFiles(), access, audit, random);
 
         return new MedVaultApp(auth, access, roles, careTeam, patients, new RecordExporter(),
-                new XmlRecordImporter(), new BackupService(), new ReportPrinter(), labs, audit, errors);
+                new XmlRecordImporter(), new BackupService(crypto), new ReportPrinter(), labs, audit, errors);
     }
 
     /** @return login and account creation */

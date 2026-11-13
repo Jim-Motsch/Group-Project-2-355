@@ -46,10 +46,39 @@ class SecurityAttackTest {
         return Base64.getEncoder().encodeToString(new TokenGenerator().randomBytes(bytes));
     }
 
-    /** CWE-327: Use of a Broken or Risky Cryptographic Algorithm. */
+    /**
+     * CWE-1204: Generation of Weak Initialization Vector. Also covers the
+     * AES-GCM basics (round trip, tamper detection, key checks) around it.
+     */
     @Nested
-    class Cwe327BrokenCrypto {
+    class Cwe1204WeakIv {
         private final TokenGenerator random = new TokenGenerator();
+
+        @Test
+        void twoEncryptionsOfTheSameTextDiffer() throws Exception {
+            CryptoService crypto = new CryptoService(newAesKey(), random);
+            String a = crypto.encrypt("Diagnosis: diabetes type 2");
+            String b = crypto.encrypt("Diagnosis: diabetes type 2");
+            assertNotEquals(a, b, "same text, same key, must still give different ciphertext");
+            byte[] ivA = java.util.Arrays.copyOf(Base64.getDecoder().decode(a), CryptoService.IV_BYTES);
+            byte[] ivB = java.util.Arrays.copyOf(Base64.getDecoder().decode(b), CryptoService.IV_BYTES);
+            assertFalse(java.util.Arrays.equals(ivA, ivB), "the IV was reused");
+            assertEquals(crypto.decrypt(a), crypto.decrypt(b), "both still decrypt to the same note");
+        }
+
+        @Test
+        void everyEncryptionGetsAFreshTwelveByteIv() throws Exception {
+            // Attack: a fixed, zero or counter IV repeats; with GCM that leaks plaintext XORs and allows forgery.
+            CryptoService crypto = new CryptoService(newAesKey(), random);
+            Set<String> ivs = new HashSet<>();
+            byte[] zeroIv = new byte[CryptoService.IV_BYTES];
+            for (int i = 0; i < 5_000; i++) {
+                byte[] iv = java.util.Arrays.copyOf(Base64.getDecoder().decode(crypto.encrypt("x")), CryptoService.IV_BYTES);
+                assertEquals(12, iv.length);
+                assertFalse(java.util.Arrays.equals(zeroIv, iv), "all-zero IV");
+                assertTrue(ivs.add(Base64.getEncoder().encodeToString(iv)), "IV repeated after " + i + " encryptions");
+            }
+        }
 
         @Test
         void legitimateNoteRoundTrips() throws Exception {
@@ -134,14 +163,61 @@ class SecurityAttackTest {
                     return super.randomBytes(length);
                 }
             };
-            new CryptoService(newAesKey(), spy).encrypt("x");
-            assertEquals(List.of(CryptoService.IV_BYTES), requested);
+            CryptoService crypto = new CryptoService(newAesKey(), spy);
+            crypto.encrypt("x");
+            crypto.encrypt("x");
+            crypto.encrypt("x");
+            assertEquals(List.of(CryptoService.IV_BYTES, CryptoService.IV_BYTES, CryptoService.IV_BYTES), requested,
+                    "one fresh SecureRandom IV per encryption, never cached");
         }
     }
 
-    /** CWE-321: Use of Hard-coded Cryptographic Key. */
+    /** CWE-328: Use of Weak Hash. */
     @Nested
-    class Cwe321HardCodedKey {
+    class Cwe328WeakHash {
+
+        @Test
+        void legitimateDefaultIsSha256() throws Exception {
+            IntegrityHasher hasher = new IntegrityHasher();
+            assertEquals("SHA-256", hasher.algorithm());
+            // Known-answer test vector for SHA-256("abc").
+            assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+                    hasher.hashHex("abc".getBytes(StandardCharsets.US_ASCII)));
+            assertEquals(hasher.hashHex("abc".getBytes(StandardCharsets.US_ASCII)),
+                    hasher.hashHex(new java.io.ByteArrayInputStream("abc".getBytes(StandardCharsets.US_ASCII))));
+            assertEquals(128, new IntegrityHasher("sha-512").hashHex(new byte[0]).length());
+        }
+
+        @Test
+        void weakAlgorithmsAreRefused() {
+            // Attack: configure integrity checks with MD5 or SHA-1, where collisions can be manufactured.
+            for (String weak : java.util.Arrays.asList("MD5", "md5", "SHA-1", "SHA1", "sha-1", "MD2", "SHA-224",
+                    "SHA3-256", "", " ", null)) {
+                assertThrows(IllegalArgumentException.class, () -> new IntegrityHasher(weak), String.valueOf(weak));
+            }
+            assertFalse(IntegrityHasher.ALLOWED.contains("MD5") || IntegrityHasher.ALLOWED.contains("SHA-1"));
+            assertThrows(UnsupportedOperationException.class, () -> IntegrityHasher.ALLOWED.add("MD5"),
+                    "the allow-list can't be widened at run time");
+        }
+
+        @Test
+        void tamperingChangesTheFingerprint() {
+            IntegrityHasher hasher = new IntegrityHasher();
+            byte[] report = "%PDF-1.4 potassium 4.1 mmol/L".getBytes(StandardCharsets.US_ASCII);
+            String fingerprint = hasher.hashHex(report);
+            assertTrue(hasher.matches(report, fingerprint));
+            assertTrue(hasher.matches(report, fingerprint.toUpperCase()));
+            byte[] altered = report.clone();
+            altered[altered.length - 7] = '9'; // 4.1 -> 9.1
+            assertFalse(hasher.matches(altered, fingerprint));
+            assertFalse(hasher.matches(report, "not-hex"));
+            assertFalse(hasher.matches(report, null));
+        }
+    }
+
+    /** The record key comes only from the environment (the same no-hard-coded-secrets rule as CWE-798). */
+    @Nested
+    class RecordKeyFromEnvironment {
 
         @Test
         void legitimateKeyFromEnvironmentLoads() {

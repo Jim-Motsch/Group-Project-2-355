@@ -70,7 +70,7 @@ public final class Patient {
         return new Patient(id, fullName, dateOfBirth, attendingClinician, notes);
     }
 
-    /** Only the id, so a chart printed to a log never leaks PHI (CWE-532). */
+    /** Only the id, so a chart printed to a log never leaks PHI (CWE-779). */
     @Override
     public String toString() {
         return "Patient[id=" + id + "]";

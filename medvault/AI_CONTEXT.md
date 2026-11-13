@@ -20,11 +20,11 @@ Our Project 1 lost most of these points because the code was "a collection of is
 
 | Package | Owner | CWEs |
 | --- | --- | --- |
-| `auth` (login, passwords, sessions) | Ian | 307, 521, 613, 759, 798, 916 |
-| `access` (permissions, care team, roles) | Martin | 269, 283, 306, 639, 842, 1220 |
-| `records` (JDBC repository, export, XML import, backup, PDF) | James | 78, 79, 89, 502, 611, 643 |
-| `files` (lab-report upload/download) | Alex | 22, 377, 404, 434, 732, 770 |
-| `security` + `audit` (AES-GCM, SecureRandom, logging, errors) | Jimmy | 117, 209, 321, 327, 338, 532 |
+| `auth` (login, passwords, sessions) | Ian | 307, 521, 613, 620, 798, 916 |
+| `access` (permissions, care team, roles) | Martin | 266, 283, 306, 639, 842, 1220 |
+| `records` (JDBC repository, export, XML import, backup, PDF) | James | 78, 79, 89, 502, 611, 1236 |
+| `files` (lab-report upload/download) | Alex | 22, 276, 378, 434, 770, 772 |
+| `security` + `audit` (AES-GCM, SHA-256, SecureRandom, logging) | Jimmy | 117, 328, 338, 778, 779, 1204 |
 
 Key cross-package calls:
 - `SessionManager.validate(token)` returns the live `Session` or throws `AccessDeniedException`.

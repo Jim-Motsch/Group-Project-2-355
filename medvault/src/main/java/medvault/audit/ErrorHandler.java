@@ -10,16 +10,21 @@ import java.util.Objects;
 /**
  * Turns any exception into a message that is safe to show to the user.
  *
- * <p><b>CWE-209: Generation of Error Message Containing Sensitive
- * Information.</b> Raw exception messages and stack traces tell an attacker
- * the SQL being run, table names, file paths and library versions, which
- * makes the next attack easier. {@link AccessDeniedException} and
- * {@link ValidationException} are written to be user-safe, so their message is
- * shown. Every other exception becomes a generic message with a random
- * reference id; the audit log gets the same id with the exception type and the
- * code location where it was thrown, so support can find it. The exception's
- * own message is never shown or logged, because it can contain SQL text,
- * paths or patient data (CWE-532).</p>
+ * <p><b>CWE-778: Insufficient Logging.</b> An error that is shown to the user
+ * but never recorded leaves no trace for anyone investigating an attack.
+ * Every exception that is not a user-safe refusal writes an
+ * {@code INTERNAL_ERROR} audit entry with a random reference id, the
+ * exception type and the code location where it was thrown; the user sees
+ * the same reference id, so support can find the entry. (The other
+ * security events, failed logins, lockouts and access denials, are audited
+ * where they happen: {@code DefaultAuthService} and {@code AccessPolicy}.)</p>
+ *
+ * <p>The user only ever sees a generic message, never the raw exception text
+ * or stack trace, which can contain SQL, table names, file paths or library
+ * versions. {@link AccessDeniedException} and {@link ValidationException} are
+ * written to be user-safe, so their message is shown. The exception's own
+ * message is not logged either, because it can contain patient data
+ * (CWE-779).</p>
  *
  * @author Jimmy Motsch
  */

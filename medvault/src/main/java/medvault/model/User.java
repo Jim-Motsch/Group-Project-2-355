@@ -51,7 +51,7 @@ public final class User {
         return Objects.hash(username, role);
     }
 
-    /** Never prints anything sensitive (CWE-532). */
+    /** Never prints anything sensitive (CWE-779). */
     @Override
     public String toString() {
         return "User[" + username + ", " + role + "]";

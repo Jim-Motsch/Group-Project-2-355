@@ -15,14 +15,20 @@ import java.util.Objects;
  * Encrypts and decrypts sensitive fields (clinical notes) before they are
  * written to the database.
  *
- * <p><b>CWE-327: Use of a Broken or Risky Cryptographic Algorithm.</b> Uses
- * {@code AES/GCM/NoPadding} with a 256-bit key, a 128-bit authentication tag
- * and a fresh 12-byte IV from {@link TokenGenerator} for every message. DES and
- * RC4 are breakable today, and ECB mode encrypts equal blocks to equal
- * ciphertext so patterns leak. GCM hides patterns (a random IV makes the same
- * note encrypt differently every time) and is authenticated, so a modified
- * ciphertext is rejected instead of decrypting to altered data. The
- * constructor refuses any key that is not a 256-bit AES key.</p>
+ * <p><b>CWE-1204: Generation of Weak Initialization Vector (IV).</b> AES-GCM
+ * is only secure if no IV is ever reused with the same key: two notes
+ * encrypted under one IV leak the XOR of their plaintexts, and a repeated IV
+ * also lets an attacker forge the authentication tag. A fixed, zero, counter
+ * or timestamp IV fails this. {@link #encrypt} asks {@link TokenGenerator}
+ * (backed by {@code SecureRandom}) for a fresh, unpredictable 12-byte IV for
+ * every single message and stores it in front of the ciphertext, so the same
+ * note encrypts differently every time and patterns between patients can't
+ * be spotted.</p>
+ *
+ * <p>The cipher is {@code AES/GCM/NoPadding} with a 256-bit key and a 128-bit
+ * authentication tag, so a modified ciphertext is rejected instead of
+ * decrypting to altered data. The constructor refuses any key that is not a
+ * 256-bit AES key.</p>
  *
  * @author Jimmy Motsch
  */
